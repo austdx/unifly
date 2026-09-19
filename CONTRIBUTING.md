@@ -27,7 +27,7 @@ Check the [ROADMAP.md](ROADMAP.md) first; it might already be planned.
 ### Prerequisites
 
 - **Rust 1.94+** (edition 2024) via [rustup](https://rustup.rs/)
-- **Nightly rustfmt**: `rustup component add rustfmt --toolchain nightly`
+- **Rustfmt**: included by the repository's `rust-toolchain.toml`
 - **just** task runner: `cargo install just`
 - A UniFi Network controller for integration testing (Cloud Key, Dream Machine, or self-hosted)
 
@@ -71,11 +71,11 @@ For deeper architectural context and code policies, see [AGENTS.md](AGENTS.md).
 ### Formatting
 
 ```bash
-just fmt                  # runs cargo +nightly fmt --all
-just fmt-check            # read-only check (same as CI)
+just fmt                  # runs cargo fmt --all with the pinned toolchain
+just fmt-check            # read-only Rust and Prettier checks
 ```
 
-The project uses nightly rustfmt with a custom `rustfmt.toml` (100-char max width, field init shorthand, try shorthand).
+The local recipes use the pinned toolchain's rustfmt with a custom `rustfmt.toml` (100-char max width, field init shorthand, try shorthand). The shared CI workflow separately enables nightly formatting.
 
 ### Linting
 

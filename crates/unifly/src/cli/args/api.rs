@@ -11,7 +11,8 @@ pub enum ApiMethod {
 
 #[derive(Debug, Args)]
 pub struct ApiArgs {
-    /// API path (appended to the controller's base URL + proxy prefix).
+    /// API path relative to the platform's network prefix.
+    /// Integration paths use API-key auth; other paths use Session auth.
     ///
     /// Session style:  api/s/{site}/stat/sitedpi
     /// V2 style:      v2/api/site/{site}/traffic-flow-latest-statistics

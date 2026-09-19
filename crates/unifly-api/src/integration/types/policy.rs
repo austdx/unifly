@@ -34,6 +34,8 @@ pub enum SourceTrafficFilter {
         #[serde(
             rename = "macAddressFilter",
             default,
+            deserialize_with = "deserialize_supplemental_mac_filter",
+            serialize_with = "serialize_supplemental_mac_filter",
             skip_serializing_if = "Option::is_none"
         )]
         mac_address_filter: Option<MacAddressFilter>,
@@ -51,6 +53,8 @@ pub enum SourceTrafficFilter {
         #[serde(
             rename = "macAddressFilter",
             default,
+            deserialize_with = "deserialize_supplemental_mac_filter",
+            serialize_with = "serialize_supplemental_mac_filter",
             skip_serializing_if = "Option::is_none"
         )]
         mac_address_filter: Option<MacAddressFilter>,
@@ -298,6 +302,57 @@ pub struct MacAddressFilter {
     pub mac_addresses: Vec<String>,
 }
 
+/// The OpenAPI source NETWORK/IP_ADDRESS filters use a single MAC string,
+/// unlike the primary MAC_ADDRESS filter's `macAddresses` object. Accept the
+/// old object representation on reads while retaining the public model type.
+fn deserialize_supplemental_mac_filter<'de, D>(
+    deserializer: D,
+) -> Result<Option<MacAddressFilter>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum WireFilter {
+        Single(String),
+        Object(MacAddressFilter),
+    }
+
+    Ok(
+        Option::<WireFilter>::deserialize(deserializer)?.map(|wire| match wire {
+            WireFilter::Single(mac) => MacAddressFilter {
+                mac_addresses: vec![mac],
+            },
+            WireFilter::Object(filter) => filter,
+        }),
+    )
+}
+
+/// Emit the schema's single-string representation. A legacy object can contain
+/// several addresses, but selecting one or omitting an empty object would
+/// change the rule's meaning; reject those writes rather than lose criteria.
+#[expect(
+    clippy::ref_option,
+    reason = "serde serialize_with passes a reference to the field"
+)]
+fn serialize_supplemental_mac_filter<S>(
+    filter: &Option<MacAddressFilter>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match filter {
+        None => serializer.serialize_none(),
+        Some(filter) => match filter.mac_addresses.as_slice() {
+            [mac] => serializer.serialize_str(mac),
+            _ => Err(serde::ser::Error::custom(
+                "a supplemental MAC filter must contain exactly one address",
+            )),
+        },
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationFilter {
@@ -318,7 +373,7 @@ pub struct RegionFilter {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DomainFilter {
-    #[serde(rename = "SPECIFIC")]
+    #[serde(rename = "DOMAINS", alias = "SPECIFIC")]
     Specific { domains: Vec<String> },
     #[serde(other)]
     Unknown,
