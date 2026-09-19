@@ -84,7 +84,7 @@ figment = { version = "0.10", features = ["toml", "env"] }
 keyring = "4"
 
 # ── Output formatting (CLI) ──
-tabled = { version = "0.21", features = ["derive", "ansi"] }
+tabled = { version = "0.22", features = ["derive", "ansi"] }
 owo-colors = "4"
 
 # ── Logging / tracing ──
