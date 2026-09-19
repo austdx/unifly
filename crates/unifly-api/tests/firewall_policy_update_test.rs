@@ -46,13 +46,17 @@ fn existing_policy(kind: &str, mac: Value) -> Value {
             "trafficFilter": {
                 "type": "DOMAIN",
                 "domainFilter": {"type": "DOMAINS", "domains": ["example.com", "*.example.org"]},
-                "portFilter": {"type": "PORTS", "items": [{"type": "PORT_NUMBER", "value": "443"}], "matchOpposite": false}
+                "portFilter": {"type": "PORTS", "items": [{"type": "PORT_NUMBER", "value": 443}], "matchOpposite": false}
             }
         }
     })
 }
 
 async fn setup(existing: &Value) -> (MockServer, Controller) {
+    setup_for_write(existing, 1).await
+}
+
+async fn setup_for_write(existing: &Value, expected_gets: u64) -> (MockServer, Controller) {
     let server = MockServer::start().await;
     // Low-priority collection fixtures cover the Controller's initial refresh.
     Mock::given(method("GET"))
@@ -86,11 +90,18 @@ async fn setup(existing: &Value) -> (MockServer, Controller) {
     Mock::given(method("GET"))
         .and(path(policy_path()))
         .respond_with(ResponseTemplate::new(200).set_body_json(existing))
-        .expect(1)
+        .expect(expected_gets)
         .mount(&server)
         .await;
     Mock::given(method("PUT"))
         .and(path(policy_path()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(existing))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(format!(
+            "/proxy/network/integration/v1/sites/{SITE_ID}/firewall/policies"
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_json(existing))
         .mount(&server)
         .await;
@@ -110,6 +121,125 @@ async fn setup(existing: &Value) -> (MockServer, Controller) {
     });
     controller.connect().await.unwrap();
     (server, controller)
+}
+
+fn range_filter_request() -> Value {
+    json!({
+        "type": "port",
+        "ports": {"type": "values", "items": ["443", "8000-9000"], "match_opposite": true}
+    })
+}
+
+fn assert_canonical_ports(body: &Value) {
+    for endpoint in ["source", "destination"] {
+        assert_eq!(
+            body[endpoint]["trafficFilter"]["portFilter"],
+            json!({"type": "PORTS", "matchOpposite": true, "items": [
+                {"type": "PORT_NUMBER", "value": 443},
+                {"type": "PORT_NUMBER_RANGE", "start": 8000, "stop": 9000}
+            ]})
+        );
+    }
+}
+
+#[tokio::test]
+async fn create_sends_numeric_port_ranges_with_schema_field_names() {
+    let existing = existing_policy("NETWORK", json!(MAC));
+    let (server, controller) = setup_for_write(&existing, 0).await;
+    let request = serde_json::from_value(json!({
+        "name": "Port restriction", "action": "Block",
+        "source_zone_id": SITE_ID, "destination_zone_id": SITE_ID,
+        "source_filter": range_filter_request(), "destination_filter": range_filter_request()
+    }))
+    .unwrap();
+    controller
+        .execute(Command::CreateFirewallPolicy(request))
+        .await
+        .unwrap();
+    controller.disconnect().await;
+    let requests = server.received_requests().await.unwrap();
+    let writes: Vec<_> = requests.iter().filter(|r| r.method == "POST").collect();
+    assert_eq!(writes.len(), 1);
+    assert_canonical_ports(&writes[0].body_json().unwrap());
+}
+
+#[tokio::test]
+async fn update_replacement_filters_send_numeric_ranges_with_schema_field_names() {
+    let existing = existing_policy("NETWORK", json!(MAC));
+    let (server, controller) = setup(&existing).await;
+    let update = serde_json::from_value(json!({
+        "source_filter": range_filter_request(), "destination_filter": range_filter_request()
+    }))
+    .unwrap();
+    controller
+        .execute(Command::UpdateFirewallPolicy {
+            id: EntityId::Uuid(Uuid::parse_str(POLICY_ID).unwrap()),
+            update,
+        })
+        .await
+        .unwrap();
+    controller.disconnect().await;
+    let requests = server.received_requests().await.unwrap();
+    let writes: Vec<_> = requests.iter().filter(|r| r.method == "PUT").collect();
+    assert_eq!(writes.len(), 1);
+    assert_canonical_ports(&writes[0].body_json().unwrap());
+}
+
+#[tokio::test]
+async fn rename_preserves_numeric_ports_and_normalizes_legacy_range_reads() {
+    for range in [
+        json!({"type": "PORT_NUMBER_RANGE", "start": 8000, "stop": 9000}),
+        json!({"type": "PORT_RANGE", "startPort": "8000", "endPort": "9000"}),
+    ] {
+        let mut existing = existing_policy("NETWORK", json!(MAC));
+        for endpoint in ["source", "destination"] {
+            existing[endpoint]["trafficFilter"]["portFilter"] = json!({
+                "type": "PORTS", "matchOpposite": true,
+                "items": [{"type": "PORT_NUMBER", "value": 443}, range]
+            });
+        }
+        let (server, controller) = setup(&existing).await;
+        controller.execute(rename_command()).await.unwrap();
+        controller.disconnect().await;
+        let requests = server.received_requests().await.unwrap();
+        let writes: Vec<_> = requests.iter().filter(|r| r.method == "PUT").collect();
+        assert_eq!(writes.len(), 1);
+        let body: Value = writes[0].body_json().unwrap();
+        assert_eq!(body["name"], "Renamed");
+        assert_canonical_ports(&body);
+        for endpoint in ["source", "destination"] {
+            existing[endpoint]["trafficFilter"]["portFilter"] =
+                body[endpoint]["trafficFilter"]["portFilter"].clone();
+            assert_eq!(body[endpoint], existing[endpoint]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn rename_rejects_invalid_stored_port_bounds_before_any_put() {
+    for endpoint in ["source", "destination"] {
+        for range in [
+            json!({"type": "PORT_NUMBER_RANGE", "start": 0, "stop": 443}),
+            json!({"type": "PORT_NUMBER_RANGE", "start": 443, "stop": 65536}),
+        ] {
+            let mut existing = existing_policy("NETWORK", json!(MAC));
+            existing[endpoint]["trafficFilter"]["portFilter"] = json!({
+                "type": "PORTS", "items": [range], "matchOpposite": false
+            });
+            let (server, controller) = setup(&existing).await;
+            let result = controller.execute(rename_command()).await;
+            controller.disconnect().await;
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(requests.iter().filter(|r| r.method == "PUT").count(), 0);
+            match result {
+                Err(CoreError::ValidationFailed { message }) => {
+                    assert!(message.contains(endpoint));
+                    assert!(message.contains("1..=65535"));
+                }
+                other => panic!("expected port serialization error, got {other:?}"),
+            }
+        }
+    }
 }
 
 fn rename_command() -> Command {

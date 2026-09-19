@@ -242,29 +242,45 @@ pub enum PortFilter {
 pub enum PortItem {
     #[serde(rename = "PORT_NUMBER")]
     Number {
-        #[serde(deserialize_with = "deserialize_port_value")]
+        #[serde(
+            deserialize_with = "deserialize_port_value",
+            serialize_with = "serialize_port_value"
+        )]
         value: String,
     },
     #[serde(rename = "PORT_NUMBER_RANGE", alias = "PORT_RANGE")]
     Range {
-        // The controller sends `start`/`stop` (per the OpenAPI schema
-        // `Number range port matching`); `startPort`/`endPort` is kept as
-        // the serialization shape the write path has been tested with.
+        // The OpenAPI `Number range port matching` schema requires integer
+        // `start`/`stop`. Keep older field names and string values on reads.
         #[serde(
-            rename = "startPort",
-            alias = "start",
-            deserialize_with = "deserialize_port_value"
+            rename = "start",
+            alias = "startPort",
+            deserialize_with = "deserialize_port_value",
+            serialize_with = "serialize_port_value"
         )]
         start_port: String,
         #[serde(
-            rename = "endPort",
-            alias = "stop",
-            deserialize_with = "deserialize_port_value"
+            rename = "stop",
+            alias = "endPort",
+            deserialize_with = "deserialize_port_value",
+            serialize_with = "serialize_port_value"
         )]
         end_port: String,
     },
     #[serde(other)]
     Unknown,
+}
+
+/// Public port fields remain strings for compatibility, while Integration API
+/// writes require integers in 1..=65535 for single ports and range endpoints.
+fn serialize_port_value<S>(value: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let port = value
+        .parse::<std::num::NonZeroU16>()
+        .map_err(|_| serde::ser::Error::custom("a port number must be an integer in 1..=65535"))?;
+    serializer.serialize_u16(port.get())
 }
 
 fn deserialize_port_value<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -692,12 +708,12 @@ mod tests {
             "Range must serialize as PORT_NUMBER_RANGE, not PORT_RANGE"
         );
         assert_eq!(
-            json.get("startPort").and_then(serde_json::Value::as_str),
-            Some("49152")
+            json.get("start").and_then(serde_json::Value::as_u64),
+            Some(49152)
         );
         assert_eq!(
-            json.get("endPort").and_then(serde_json::Value::as_str),
-            Some("65535")
+            json.get("stop").and_then(serde_json::Value::as_u64),
+            Some(65535)
         );
     }
 
