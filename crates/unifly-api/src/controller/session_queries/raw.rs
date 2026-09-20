@@ -1,17 +1,23 @@
 use crate::controller::Controller;
-use crate::controller::support::require_session;
 use crate::core_error::CoreError;
+use reqwest::Method;
+
+mod routing;
+
+#[cfg(test)]
+mod redirect_tests;
+#[cfg(test)]
+mod tests;
 
 impl Controller {
     /// Send a raw GET request to an arbitrary path on the controller.
     ///
     /// The `path` is appended to the controller base URL + platform prefix
-    /// (e.g. `/proxy/network/`). The response is returned as raw JSON
-    /// without session envelope unwrapping.
+    /// (e.g. `/proxy/network/`). `integration/` paths use API-key auth;
+    /// other paths use Session auth. A single leading slash is optional.
+    /// The response is returned as raw JSON without envelope unwrapping.
     pub async fn raw_get(&self, path: &str) -> Result<serde_json::Value, CoreError> {
-        let guard = self.inner.session_client.lock().await;
-        let session = require_session(guard.as_ref())?;
-        Ok(session.raw_get(path).await?)
+        self.raw_request(Method::GET, path, None).await
     }
 
     /// Send a raw POST request to an arbitrary path on the controller.
@@ -20,9 +26,7 @@ impl Controller {
         path: &str,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, CoreError> {
-        let guard = self.inner.session_client.lock().await;
-        let session = require_session(guard.as_ref())?;
-        Ok(session.raw_post(path, body).await?)
+        self.raw_request(Method::POST, path, Some(body)).await
     }
 
     /// Send a raw PUT request to an arbitrary path on the controller.
@@ -31,9 +35,7 @@ impl Controller {
         path: &str,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, CoreError> {
-        let guard = self.inner.session_client.lock().await;
-        let session = require_session(guard.as_ref())?;
-        Ok(session.raw_put(path, body).await?)
+        self.raw_request(Method::PUT, path, Some(body)).await
     }
 
     /// Send a raw PATCH request to an arbitrary path on the controller.
@@ -42,16 +44,12 @@ impl Controller {
         path: &str,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, CoreError> {
-        let guard = self.inner.session_client.lock().await;
-        let session = require_session(guard.as_ref())?;
-        Ok(session.raw_patch(path, body).await?)
+        self.raw_request(Method::PATCH, path, Some(body)).await
     }
 
     /// Send a raw DELETE request to an arbitrary path on the controller.
     pub async fn raw_delete(&self, path: &str) -> Result<(), CoreError> {
-        let guard = self.inner.session_client.lock().await;
-        let session = require_session(guard.as_ref())?;
-        session.raw_delete(path).await?;
+        self.raw_request(Method::DELETE, path, None).await?;
         Ok(())
     }
 }

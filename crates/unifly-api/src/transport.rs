@@ -76,9 +76,20 @@ impl TransportConfig {
         &self,
         headers: reqwest::header::HeaderMap,
     ) -> Result<reqwest::Client, crate::error::Error> {
+        self.build_client_with_headers_and_redirect(headers, reqwest::redirect::Policy::default())
+    }
+
+    /// Let API-key clients constrain redirect destinations without changing
+    /// redirect behavior for Session and Site Manager callers.
+    pub(crate) fn build_client_with_headers_and_redirect(
+        &self,
+        headers: reqwest::header::HeaderMap,
+        redirect: reqwest::redirect::Policy,
+    ) -> Result<reqwest::Client, crate::error::Error> {
         let mut builder = reqwest::Client::builder()
             .timeout(self.timeout)
             .user_agent("unifly/0.1.0")
+            .redirect(redirect)
             .default_headers(headers);
 
         match &self.tls {

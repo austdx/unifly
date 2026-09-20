@@ -639,12 +639,15 @@ unifly api <path> [-m get|post|put|patch|delete] [-d '<json-body>']
 
 **Gotchas:**
 
-- Routes through the Session client, so CSRF tokens and session caching
-  are handled automatically.
-- Paths are relative to the controller base URL. Examples:
+- `integration/` paths use the Integration API key, including cloud
+  connector profiles. Other paths use the Session client with its existing
+  authentication and CSRF handling. Session-only profiles cannot call
+  Integration endpoints.
+- Paths are relative to the platform's network prefix; one leading `/` is
+  optional. Absolute URLs, fragments, and path traversal are rejected. Examples:
   - Session v1: `api/s/default/stat/device`
   - Session v2: `v2/api/site/default/traffic-flow-latest-statistics`
-  - Integration v1: `integration/v1/sites/default/clients`
+  - Integration v1: `integration/v1/sites/<site-uuid>/clients`
   - Commands: `cmd/stamgr`, `cmd/devmgr`
 - `-d '<json>'` is used for `post`, `put`, and `patch`.
 - `delete` does not require a body.

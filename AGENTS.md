@@ -155,8 +155,9 @@ operations live in submodules:
 - `payloads.rs` / `payloads/`: request body construction
 - `refresh.rs`: periodic data sync
 - `subscriptions.rs`: WebSocket event fan-out
-- `session_queries.rs`: Session-specific read paths, including `raw_get`/
-  `raw_post` used by the `unifly api` command
+- `session_queries.rs`: Session-specific read paths, including raw methods
+  used by `unifly api`. Raw `integration/` paths route to the API-key Integration
+  client (including cloud); other raw paths retain Session auth and CSRF.
 
 ### Reactive DataStore
 
@@ -679,9 +680,10 @@ workflow.
 - **`networks refs <id>`** is the only command that answers "what depends
   on this entity before I delete it." No equivalent exists for other
   entities yet.
-- **`unifly api <path>`** routes through the Session client and handles
-  CSRF automatically, so it can reach Session v1, v2, and Integration
-  endpoints without caring about auth mode.
+- **`unifly api <path>`** sends `integration/` paths through the API-key
+  Integration client, including cloud connector profiles. Other paths use
+  the Session client with existing authentication and CSRF handling.
+  Session-only profiles cannot call raw Integration endpoints.
 - **`clients roams` and `clients wifi`** accept any client identifier
   (name, hostname, IP, or MAC). Resolution uses the in-memory snapshot,
   so the client must appear in `clients list`. `roams` resolves to MAC;
