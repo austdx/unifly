@@ -284,7 +284,7 @@ impl IntegrationClient {
         if status.is_success() {
             let body = resp.text().await?;
             serde_json::from_str(&body).map_err(|e| {
-                let preview = &body[..body.len().min(200)];
+                let preview = &body[..body.floor_char_boundary(200)];
                 Error::Deserialization {
                     message: format!("{e} (body preview: {preview:?})"),
                     body,
