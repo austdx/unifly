@@ -65,7 +65,15 @@ pub(super) async fn route(ctx: &CommandContext, cmd: Command) -> Result<CommandR
                     .unwrap_or_default();
                 build_endpoint_json(&zone_id, Some(spec))?
             } else {
-                serde_json::to_value(&existing.source).unwrap_or_default()
+                // An endpoint that cannot be represented on the wire must stop
+                // the update; replacing it with null would broaden the rule.
+                serde_json::to_value(&existing.source).map_err(|error| {
+                    CoreError::ValidationFailed {
+                        message: format!(
+                            "cannot preserve existing firewall policy source: {error}"
+                        ),
+                    }
+                })?
             };
 
             let destination = if let Some(ref spec) = update.destination_filter {
@@ -77,7 +85,13 @@ pub(super) async fn route(ctx: &CommandContext, cmd: Command) -> Result<CommandR
                     .unwrap_or_default();
                 build_endpoint_json(&zone_id, Some(spec))?
             } else {
-                serde_json::to_value(&existing.destination).unwrap_or_default()
+                serde_json::to_value(&existing.destination).map_err(|error| {
+                    CoreError::ValidationFailed {
+                        message: format!(
+                            "cannot preserve existing firewall policy destination: {error}"
+                        ),
+                    }
+                })?
             };
 
             // Always reconstruct the action payload so that legacy `DROP`
