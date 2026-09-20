@@ -521,7 +521,7 @@ Releases use the shared workflow at
 3. The tag push triggers `.github/workflows/cicd.yml` which:
    - Rebuilds and tests via the shared rust-ci workflow
    - Builds release artifacts for 4 targets (linux amd64+arm64, macOS
-     arm64, Windows gnu)
+     arm64, Windows MSVC)
    - Publishes `unifly-api` and `unifly` to crates.io (shared rust-publish)
    - Creates a GitHub Release with all artifacts and git-iris-generated
      notes
