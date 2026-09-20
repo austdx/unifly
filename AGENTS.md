@@ -49,7 +49,7 @@ The project uses **just** for task orchestration. All recipes live in the
 just check              # fmt-check + maintainability + clippy + test
 
 # Individual gates
-just fmt-check          # nightly rustfmt + prettier, read-only
+just fmt-check          # pinned-toolchain rustfmt + prettier, read-only
 just maintainability    # scripts/check-maintainability.sh line-count gate
 just clippy             # cargo clippy --workspace --all-targets
 just test               # cargo test --workspace
@@ -469,9 +469,9 @@ lints without a strong reason.
 ### Format
 
 `rustfmt.toml` pins: edition 2024, 100-char max width, field init
-shorthand, try shorthand. **Nightly rustfmt is required** for stable
-output (`rustup component add rustfmt --toolchain nightly`). `just fmt`
-runs the nightly formatter.
+shorthand, try shorthand. `just fmt` and `just fmt-check` use the toolchain
+pinned in `rust-toolchain.toml`. The shared CI workflow separately enables
+nightly formatting (`nightly-fmt: true`).
 
 ### Secrets
 
