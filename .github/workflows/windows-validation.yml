@@ -1,0 +1,62 @@
+name: Windows x64 compatibility validation
+
+on:
+  push:
+    branches: [ci/windows-validation]
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Full reviewed commit SHA to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 Rust ${{ matrix.rust }}
+    runs-on: windows-2025
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: ["1.94.0", "1.97.0"]
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_JOBS: "2"
+      CARGO_TERM_COLOR: never
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/windows-${{ matrix.rust }}
+    steps:
+      - name: Require an immutable commit
+        shell: pwsh
+        env:
+          REVIEWED_REVISION: ${{ inputs.revision || github.sha }}
+        run: |
+          if ($env:REVIEWED_REVISION -notmatch '^[0-9a-f]{40}$') {
+            throw 'revision must be a reviewed full lowercase commit SHA'
+          }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - name: Install explicit toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install ${{ matrix.rust }} --profile minimal --component clippy --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustc +${{ matrix.rust }} -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Locked full workspace build
+        run: cargo +${{ matrix.rust }} build --workspace --locked --target x86_64-pc-windows-msvc
+      - name: Locked workspace tests
+        run: cargo +${{ matrix.rust }} test --workspace --locked --target x86_64-pc-windows-msvc
+      - name: Locked Clippy
+        run: cargo +${{ matrix.rust }} clippy --workspace --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
+      - name: CLI and compiled TUI smoke checks
+        shell: pwsh
+        run: |
+          & "$env:CARGO_TARGET_DIR/x86_64-pc-windows-msvc/debug/unifly.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:CARGO_TARGET_DIR/x86_64-pc-windows-msvc/debug/unifly.exe" tui --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
