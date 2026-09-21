@@ -1,8 +1,8 @@
-name: Windows x64 compatibility validation
+name: Upstream readiness validation
 
 on:
   push:
-    branches: [ci/windows-validation]
+    branches: [ci/upstream-readiness]
   workflow_dispatch:
     inputs:
       revision:
@@ -60,3 +60,71 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "$env:CARGO_TARGET_DIR/x86_64-pc-windows-msvc/debug/unifly.exe" tui --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  dependency-policy:
+    name: Hosted dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - name: Require an immutable commit
+        env:
+          REVIEWED_REVISION: ${{ inputs.revision || github.sha }}
+        run: test "${#REVIEWED_REVISION}" -eq 40 && [[ "$REVIEWED_REVISION" =~ ^[0-9a-f]+$ ]]
+      - name: Enforce the production policy
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          arguments: --locked --all-features
+          command: check
+      - name: Prepare isolated negative policy fixtures
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          source = Path("deny.toml").read_text()
+          fixtures = Path(".policy-negative")
+          fixtures.mkdir()
+          assert '    "MIT",' in source
+          assert '    "OpenSSL",' not in source
+          (fixtures / "disallowed.toml").write_text(source.replace('    "MIT",\n', ''))
+          (fixtures / "unused.toml").write_text(source.replace('allow = [', 'allow = [\n    "OpenSSL",'))
+          (fixtures / "malformed.toml").write_text('[licenses\n')
+          PYTHON
+      - name: Reject a disallowed license
+        id: disallowed
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          arguments: --locked --all-features --config .policy-negative/disallowed.toml
+          command: check licenses
+      - name: Reject an unused allowance
+        id: unused
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          arguments: --locked --all-features --config .policy-negative/unused.toml
+          command: check licenses
+      - name: Reject a malformed policy
+        id: malformed
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          arguments: --locked --all-features --config .policy-negative/malformed.toml
+          command: check licenses
+      - name: Require all negative checks to fail
+        if: always()
+        env:
+          DISALLOWED: ${{ steps.disallowed.outcome }}
+          UNUSED: ${{ steps.unused.outcome }}
+          MALFORMED: ${{ steps.malformed.outcome }}
+        run: |
+          test "$DISALLOWED" = failure
+          test "$UNUSED" = failure
+          test "$MALFORMED" = failure
+      - name: Verify production policy unchanged and clean fixtures
+        if: always()
+        run: |
+          git diff --exit-code -- deny.toml Cargo.lock
+          rm -rf -- .policy-negative
