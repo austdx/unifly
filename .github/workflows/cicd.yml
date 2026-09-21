@@ -236,13 +236,18 @@ jobs:
       - name: Calculate checksums
         id: sha
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           RELEASE_URL="https://github.com/hyperb1iss/unifly/releases/download/${GITHUB_REF_NAME}"
+          # Finish every checked download before publishing any step outputs.
+          MACOS_ARM64_SHA=$(curl -fsSL "${RELEASE_URL}/unifly-macos-arm64" | shasum -a 256 | cut -d' ' -f1)
+          LINUX_ARM64_SHA=$(curl -fsSL "${RELEASE_URL}/unifly-linux-arm64" | shasum -a 256 | cut -d' ' -f1)
+          LINUX_AMD64_SHA=$(curl -fsSL "${RELEASE_URL}/unifly-linux-amd64" | shasum -a 256 | cut -d' ' -f1)
           {
             echo "version=$VERSION"
-            echo "macos_arm64=$(curl -fsSL "${RELEASE_URL}/unifly-macos-arm64" | shasum -a 256 | cut -d' ' -f1)"
-            echo "linux_arm64=$(curl -fsSL "${RELEASE_URL}/unifly-linux-arm64" | shasum -a 256 | cut -d' ' -f1)"
-            echo "linux_amd64=$(curl -fsSL "${RELEASE_URL}/unifly-linux-amd64" | shasum -a 256 | cut -d' ' -f1)"
+            echo "macos_arm64=$MACOS_ARM64_SHA"
+            echo "linux_arm64=$LINUX_ARM64_SHA"
+            echo "linux_amd64=$LINUX_AMD64_SHA"
           } >> "$GITHUB_OUTPUT"
       - name: Generate formula
         run: |
