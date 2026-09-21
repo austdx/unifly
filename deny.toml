@@ -3,6 +3,9 @@ unmaintained = "workspace"
 yanked = "warn"
 
 [licenses]
+# Audit the complete workspace graph and reject stale policy exceptions.
+include-dev = true
+unused-allowed-license = "deny"
 allow = [
     "MIT",
     "Apache-2.0",

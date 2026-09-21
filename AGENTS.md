@@ -46,7 +46,7 @@ The project uses **just** for task orchestration. All recipes live in the
 
 ```bash
 # The canonical "before commit" gate
-just check              # fmt-check + maintainability + clippy + test
+just check              # fmt-check + maintainability + deny + clippy + test
 
 # Individual gates
 just fmt-check          # pinned-toolchain rustfmt + prettier, read-only
@@ -499,10 +499,14 @@ config when materializing `AuthCredentials`.
 - License allowlist: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause,
   CDLA-Permissive-2.0, ISC, Unicode-3.0, Zlib, MPL-2.0
 - Wildcards are denied
-- Git sources are denied by default (all deps must come from crates.io)
+- Unused license allowances fail the check; development dependencies are included
+- Duplicate versions, yanked crates, and unknown Git/registry sources warn
 
-Run `cargo deny check` before adding or upgrading dependencies. New
-licenses require a deliberate policy update.
+Run `just deny` before adding or upgrading dependencies. It runs
+`cargo deny --locked --all-features check` across all platforms, including build
+and development dependencies. `just check` and the CI Dependency Policy job
+enforce this gate; releases depend on that job. New licenses require a deliberate
+policy update. Review warnings rather than suppressing them to obtain a clean log.
 
 ---
 

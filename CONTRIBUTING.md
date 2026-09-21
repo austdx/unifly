@@ -29,6 +29,7 @@ Check the [ROADMAP.md](ROADMAP.md) first; it might already be planned.
 - **Rust 1.94+** (edition 2024) via [rustup](https://rustup.rs/)
 - **Rustfmt**: included by the repository's `rust-toolchain.toml`
 - **just** task runner: `cargo install just`
+- **cargo-deny 0.20.2**: `cargo install cargo-deny --version 0.20.2 --locked`
 - A UniFi Network controller for integration testing (Cloud Key, Dream Machine, or self-hosted)
 
 ### Build & Test
@@ -158,7 +159,7 @@ Connection defaults are overridable via `UNIFLY_E2E_URL`, `UNIFLY_E2E_USERNAME`,
 3. **Implement** your changes with tests where applicable
 4. **Run the CI gate locally** before pushing:
    ```bash
-   just check               # fmt-check + maintainability + clippy + test
+   just check               # fmt-check + maintainability + deny + clippy + test
    ```
 5. **Open a PR** targeting `main`
 6. Describe what changed and why. Link the relevant issue if one exists.
@@ -168,3 +169,13 @@ Feedback is collaborative, not adversarial. We'll work through any issues togeth
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE), the same license covering the project.
+
+### Dependency policy
+
+Run `just deny` when changing dependencies or `deny.toml`. This checks the locked
+graph with all features and platforms, including build and development
+dependencies. Disallowed licenses and unused license allowances fail the check.
+The same policy runs in `just check` and CI, and blocks release builds on failure.
+Duplicate versions, yanked crates, and unknown sources remain warnings requiring
+review; do not force incompatible versions or widen license allowances to silence
+diagnostics.

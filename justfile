@@ -29,8 +29,12 @@ install-cli:
 
 # ── Quality ─────────────────────────────────────────────────────
 
-# Run all checks (format + maintainability + clippy + test)
-check: fmt-check maintainability clippy test
+# Run all checks (format + maintainability + dependency policy + clippy + test)
+check: fmt-check maintainability deny clippy test
+
+# Audit the locked dependency graph, including all features and platforms
+deny:
+    cargo deny --locked --all-features check
 
 # Run clippy with workspace lints
 clippy:
