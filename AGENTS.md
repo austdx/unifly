@@ -49,7 +49,7 @@ The project uses **just** for task orchestration. All recipes live in the
 just check              # fmt-check + maintainability + clippy + test
 
 # Individual gates
-just fmt-check          # nightly rustfmt + prettier, read-only
+just fmt-check          # pinned-toolchain rustfmt + prettier, read-only
 just maintainability    # scripts/check-maintainability.sh line-count gate
 just clippy             # cargo clippy --workspace --all-targets
 just test               # cargo test --workspace
@@ -155,8 +155,9 @@ operations live in submodules:
 - `payloads.rs` / `payloads/`: request body construction
 - `refresh.rs`: periodic data sync
 - `subscriptions.rs`: WebSocket event fan-out
-- `session_queries.rs`: Session-specific read paths, including `raw_get`/
-  `raw_post` used by the `unifly api` command
+- `session_queries.rs`: Session-specific read paths, including raw methods
+  used by `unifly api`. Raw `integration/` paths route to the API-key Integration
+  client (including cloud); other raw paths retain Session auth and CSRF.
 
 ### Reactive DataStore
 
@@ -469,9 +470,9 @@ lints without a strong reason.
 ### Format
 
 `rustfmt.toml` pins: edition 2024, 100-char max width, field init
-shorthand, try shorthand. **Nightly rustfmt is required** for stable
-output (`rustup component add rustfmt --toolchain nightly`). `just fmt`
-runs the nightly formatter.
+shorthand, try shorthand. `just fmt` and `just fmt-check` use the toolchain
+pinned in `rust-toolchain.toml`. The shared CI workflow separately enables
+nightly formatting (`nightly-fmt: true`).
 
 ### Secrets
 
@@ -495,8 +496,8 @@ config when materializing `AuthCredentials`.
 `deny.toml` enforces:
 
 - Vulnerability advisories fail the build
-- License allowlist: MIT, Apache-2.0, BSD-2/3-Clause, ISC, Unicode-3.0,
-  Unicode-DFS-2016, Zlib, OpenSSL, MPL-2.0
+- License allowlist: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause,
+  CDLA-Permissive-2.0, ISC, Unicode-3.0, Zlib, MPL-2.0
 - Wildcards are denied
 - Git sources are denied by default (all deps must come from crates.io)
 
@@ -520,7 +521,7 @@ Releases use the shared workflow at
 3. The tag push triggers `.github/workflows/cicd.yml` which:
    - Rebuilds and tests via the shared rust-ci workflow
    - Builds release artifacts for 4 targets (linux amd64+arm64, macOS
-     arm64, Windows gnu)
+     arm64, Windows MSVC)
    - Publishes `unifly-api` and `unifly` to crates.io (shared rust-publish)
    - Creates a GitHub Release with all artifacts and git-iris-generated
      notes
@@ -679,9 +680,10 @@ workflow.
 - **`networks refs <id>`** is the only command that answers "what depends
   on this entity before I delete it." No equivalent exists for other
   entities yet.
-- **`unifly api <path>`** routes through the Session client and handles
-  CSRF automatically, so it can reach Session v1, v2, and Integration
-  endpoints without caring about auth mode.
+- **`unifly api <path>`** sends `integration/` paths through the API-key
+  Integration client, including cloud connector profiles. Other paths use
+  the Session client with existing authentication and CSRF handling.
+  Session-only profiles cannot call raw Integration endpoints.
 - **`clients roams` and `clients wifi`** accept any client identifier
   (name, hostname, IP, or MAC). Resolution uses the in-memory snapshot,
   so the client must appear in `clients list`. `roams` resolves to MAC;

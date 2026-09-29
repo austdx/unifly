@@ -3,9 +3,10 @@ use crate::core_error::CoreError;
 
 fn parse_port(value: &str) -> Result<u16, CoreError> {
     value
-        .parse::<u16>()
+        .parse::<std::num::NonZeroU16>()
+        .map(std::num::NonZeroU16::get)
         .map_err(|_| CoreError::ValidationFailed {
-            message: format!("invalid port number {value:?} (expected 0-65535)"),
+            message: format!("invalid port number {value:?} (expected 1-65535)"),
         })
 }
 
@@ -18,8 +19,8 @@ fn build_port_item_json(p: &str) -> Result<serde_json::Value, CoreError> {
         let end = parse_port(end_str)?;
         Ok(serde_json::json!({
             "type": "PORT_NUMBER_RANGE",
-            "startPort": start,
-            "endPort": end,
+            "start": start,
+            "stop": end,
         }))
     } else {
         let port = parse_port(p)?;
@@ -274,25 +275,26 @@ mod tests {
 
     #[test]
     fn build_port_filter_json_rejects_invalid_port_number() {
-        let spec = PortSpec::Values {
-            items: vec!["abc".into()],
-            match_opposite: false,
-        };
-        let err = super::build_port_filter_json(&spec).expect_err("invalid port should error");
-        assert!(
-            matches!(err, CoreError::ValidationFailed { .. }),
-            "expected ValidationFailed, got {err:?}",
-        );
+        for value in ["abc", "0", "65536", "-1"] {
+            let spec = PortSpec::Values {
+                items: vec![value.into()],
+                match_opposite: false,
+            };
+            let err = super::build_port_filter_json(&spec).expect_err("invalid port should error");
+            assert!(matches!(err, CoreError::ValidationFailed { .. }));
+        }
     }
 
     #[test]
     fn build_port_filter_json_rejects_invalid_port_range() {
-        let spec = PortSpec::Values {
-            items: vec!["80-abc".into()],
-            match_opposite: false,
-        };
-        let err = super::build_port_filter_json(&spec).expect_err("invalid range end should error");
-        assert!(matches!(err, CoreError::ValidationFailed { .. }));
+        for range in ["80-abc", "0-80", "80-65536"] {
+            let spec = PortSpec::Values {
+                items: vec![range.into()],
+                match_opposite: false,
+            };
+            let err = super::build_port_filter_json(&spec).expect_err("invalid range should error");
+            assert!(matches!(err, CoreError::ValidationFailed { .. }));
+        }
     }
 
     /// Full round-trip: a JSONC-style payload using the new tagged PortSpec

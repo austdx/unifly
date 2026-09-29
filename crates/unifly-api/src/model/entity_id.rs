@@ -121,7 +121,9 @@ fn normalize_mac(raw: &str) -> Option<String> {
 
     let bytes = compact.as_bytes();
     let mut normalized = String::with_capacity(17);
-    for (idx, pair) in bytes.chunks_exact(2).enumerate() {
+    // Length is checked to be exactly 12 above, so there is no remainder.
+    let (pairs, _) = bytes.as_chunks::<2>();
+    for (idx, pair) in pairs.iter().enumerate() {
         if idx > 0 {
             normalized.push(':');
         }

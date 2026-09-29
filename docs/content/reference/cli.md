@@ -407,7 +407,16 @@ unifly countries                                # Country codes for WiFi regulat
 
 ## Raw API
 
-Escape hatch for any controller endpoint. Routes through the Session client with automatic CSRF handling.
+Escape hatch for controller endpoints. Paths beginning with `integration/` use
+the Integration client and its API key, including cloud connector profiles.
+Other paths use the Session client with its existing authentication and CSRF
+handling. Session-only profiles cannot call Integration endpoints.
+
+Paths are relative to the platform's network prefix (one leading `/` is
+optional). Use `integration/v1/sites` to list Integration sites, then use a
+site's UUID in site-scoped Integration paths. Absolute URLs, fragments, and
+path traversal are rejected. GET, POST, PUT, and PATCH return the complete
+JSON response; DELETE returns `{"ok": true}` on success.
 
 ```bash
 unifly api api/s/default/stat/sitedpi                    # GET a session endpoint

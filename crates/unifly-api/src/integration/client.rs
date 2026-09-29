@@ -20,6 +20,8 @@ mod devices;
 mod firewall;
 mod networks;
 mod policy;
+mod raw;
+mod redirect;
 mod reference;
 mod system;
 mod wifi;
@@ -55,6 +57,8 @@ impl IntegrationClient {
     /// Injects `X-API-KEY` as a default header on every request.
     /// On UniFi OS the base path is `/proxy/network/integration/`;
     /// on standalone controllers it's just `/integration/`.
+    /// Redirects stay on the same origin and within this Integration base
+    /// path (including the selected cloud console), with a ten-hop limit.
     pub fn from_api_key(
         base_url: &str,
         api_key: &secrecy::SecretString,
@@ -69,8 +73,9 @@ impl IntegrationClient {
         key_value.set_sensitive(true);
         headers.insert("X-API-KEY", key_value);
 
-        let http = transport.build_client_with_headers(headers)?;
         let base_url = Self::normalize_base_url(base_url, platform)?;
+        let http = transport
+            .build_client_with_headers_and_redirect(headers, Self::redirect_policy(&base_url))?;
         let cloud_host_id = Self::extract_cloud_host_id(&base_url, platform);
 
         Ok(Self {
@@ -82,6 +87,12 @@ impl IntegrationClient {
     }
 
     /// Wrap an existing `reqwest::Client` (caller manages auth headers).
+    ///
+    /// The caller also owns its redirect policy: disable redirects or restrict
+    /// them to this origin and Integration base path, including the cloud
+    /// console prefix. Reqwest's default policy can forward custom API-key
+    /// headers across origins, even when marked sensitive. Use [`Self::from_api_key`]
+    /// for a client that enforces these redirect boundaries automatically.
     pub fn from_reqwest(
         base_url: &str,
         http: reqwest::Client,
@@ -271,17 +282,22 @@ impl IntegrationClient {
     ) -> Result<T, Error> {
         let status = resp.status();
         if status.is_success() {
-            let body = resp.text().await?;
-            serde_json::from_str(&body).map_err(|e| {
-                let preview = &body[..body.len().min(200)];
-                Error::Deserialization {
-                    message: format!("{e} (body preview: {preview:?})"),
-                    body,
-                }
-            })
+            Self::decode_json(resp.text().await?)
         } else {
             Err(self.parse_error(status, resp).await)
         }
+    }
+
+    /// Decode a success body, keeping a UTF-8-safe 200-byte preview in the
+    /// error so a bad payload is diagnosable without logging all of it.
+    fn decode_json<T: DeserializeOwned>(body: String) -> Result<T, Error> {
+        serde_json::from_str(&body).map_err(|e| {
+            let preview = &body[..body.floor_char_boundary(200)];
+            Error::Deserialization {
+                message: format!("{e} (body preview: {preview:?})"),
+                body,
+            }
+        })
     }
 
     async fn handle_empty(&self, resp: reqwest::Response) -> Result<(), Error> {
