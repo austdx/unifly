@@ -1142,3 +1142,44 @@ async fn api_key_mode_reports_unsupported_when_integration_api_missing() {
         other => panic!("expected CoreError::Unsupported, got: {other:?}"),
     }
 }
+
+/// The Session client built for API-key auth in `connect()` carries
+/// `X-API-KEY`, which reqwest keeps on a cross-host redirect. A session route
+/// that redirects to another origin must fail without contacting it.
+#[tokio::test]
+async fn api_key_session_client_does_not_follow_cross_origin_redirect() {
+    let server = MockServer::start().await;
+    let other = MockServer::start().await;
+    mock_api_key_with_legacy(&server).await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(legacy_envelope(&json!([]))))
+        .mount(&other)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/proxy/network/api/s/default/stat/redirect-probe"))
+        .respond_with(
+            ResponseTemplate::new(302).insert_header("Location", format!("{}/stolen", other.uri())),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let controller = Controller::new(base_config(
+        Url::parse(&server.uri()).unwrap(),
+        AuthCredentials::ApiKey(secret("the-key")),
+        LEGACY_SITE_NAME,
+        false,
+    ));
+    controller.connect().await.unwrap();
+    let result = controller
+        .raw_get("api/s/default/stat/redirect-probe")
+        .await;
+
+    let forwarded = other.received_requests().await.unwrap();
+    assert!(
+        forwarded.is_empty(),
+        "session redirect forwarded the API key to another origin: {forwarded:?}"
+    );
+    assert!(result.is_err(), "an off-origin redirect must not succeed");
+    controller.disconnect().await;
+}

@@ -645,9 +645,9 @@ unifly api <path> [-m get|post|put|patch|delete] [-d '<json-body>']
   Integration endpoints.
 - API-key requests follow redirects only on the controller's own origin (up
   to 10 hops; Integration requests must also stay under the Integration
-  path). A redirect elsewhere, including `http://` → `https://` on another
-  origin, fails rather than send the key to that host. Use the final
-  `https://` URL in the profile.
+  path). A redirect elsewhere fails rather than send the key there. That
+  includes `http://` → `https://`, even on the same host, because the scheme
+  is part of the origin. Use the final `https://` URL in the profile.
 - Paths are relative to the platform's network prefix; one leading `/` is
   optional. Absolute URLs, fragments, and path traversal are rejected. Examples:
   - Session v1: `api/s/default/stat/device`
