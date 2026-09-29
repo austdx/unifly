@@ -161,3 +161,73 @@ async fn test_rate_limit_maps_retry_after_header() {
         "expected rate limit error, got {result:?}"
     );
 }
+
+/// `X-API-KEY` is a custom header, which reqwest keeps on a cross-host
+/// redirect. The Site Manager client must refuse to follow the redirect
+/// rather than hand the key to another origin.
+#[tokio::test]
+async fn test_api_key_is_not_forwarded_on_cross_origin_redirect() {
+    let server = MockServer::start().await;
+    let other = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [],
+            "traceId": "leaked"
+        })))
+        .mount(&other)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/hosts"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("Location", format!("{}/v1/hosts", other.uri())),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = SiteManagerClient::from_api_key(
+        &server.uri(),
+        &secrecy::SecretString::from("test-key"),
+        &unifly_api::TransportConfig::default(),
+    )
+    .unwrap();
+    let result = client.list_hosts().await;
+
+    let forwarded = other.received_requests().await.unwrap();
+    assert!(
+        forwarded.is_empty(),
+        "redirect forwarded the API key to another origin: {forwarded:?}"
+    );
+    assert!(result.is_err(), "an off-origin redirect must not succeed");
+}
+
+/// Same-origin redirects keep working, with the key still attached.
+#[tokio::test]
+async fn test_api_key_follows_same_origin_redirect() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/hosts"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/v1/hosts-moved"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/hosts-moved"))
+        .and(wiremock::matchers::header("X-API-KEY", "test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [],
+            "traceId": "trace-1"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = SiteManagerClient::from_api_key(
+        &server.uri(),
+        &secrecy::SecretString::from("test-key"),
+        &unifly_api::TransportConfig::default(),
+    )
+    .unwrap();
+    assert!(client.list_hosts().await.unwrap().is_empty());
+}

@@ -5,9 +5,6 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use reqwest::header::{HeaderMap, HeaderValue};
-use secrecy::ExposeSecret;
-
 use crate::config::AuthCredentials;
 use crate::core_error::CoreError;
 use crate::websocket::{ReconnectConfig, WebSocketHandle};
@@ -97,16 +94,9 @@ impl Controller {
                 // gives us access to /rest/user (DHCP reservations),
                 // /stat/sta (client stats), and health data. Some
                 // legacy routes such as /stat/event vary by controller.
-                let mut headers = HeaderMap::new();
-                let mut key_value =
-                    HeaderValue::from_str(api_key.expose_secret()).map_err(|e| {
-                        CoreError::from(crate::error::Error::Authentication {
-                            message: format!("invalid API key header value: {e}"),
-                        })
-                    })?;
-                key_value.set_sensitive(true);
-                headers.insert("X-API-KEY", key_value);
-                let legacy_http = transport.build_client_with_headers(headers)?;
+                // Same origin only: session paths span /proxy/network/api,
+                // /api/auth and v2, so no path prefix.
+                let legacy_http = transport.build_api_key_client(api_key, &config.url, None)?;
                 let session = SessionClient::with_client(
                     legacy_http,
                     config.url.clone(),

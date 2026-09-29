@@ -69,9 +69,11 @@ impl TransportConfig {
             .map_err(|e| crate::error::Error::Tls(format!("failed to build HTTP client: {e}")))
     }
 
-    /// Build a `reqwest::Client` with additional default headers.
+    /// Build a `reqwest::Client` with additional default headers and
+    /// reqwest's default redirect policy.
     ///
-    /// Used by the Integration API client to inject the `X-API-KEY` header.
+    /// Do not use this for `X-API-KEY`: reqwest keeps custom headers on a
+    /// cross-host redirect. API-key clients use `build_api_key_client`.
     pub fn build_client_with_headers(
         &self,
         headers: reqwest::header::HeaderMap,
@@ -79,8 +81,32 @@ impl TransportConfig {
         self.build_client_with_headers_and_redirect(headers, reqwest::redirect::Policy::default())
     }
 
-    /// Let API-key clients constrain redirect destinations without changing
-    /// redirect behavior for Session and Site Manager callers.
+    /// Build a client that sends `X-API-KEY` on every request and only
+    /// follows redirects on `base_url`'s origin (and under `path_prefix`,
+    /// when set). Every API-key client goes through this, so the key can
+    /// never ride a redirect to another host.
+    pub(crate) fn build_api_key_client(
+        &self,
+        api_key: &secrecy::SecretString,
+        base_url: &url::Url,
+        path_prefix: Option<String>,
+    ) -> Result<reqwest::Client, crate::error::Error> {
+        use secrecy::ExposeSecret;
+
+        let mut key_value = reqwest::header::HeaderValue::from_str(api_key.expose_secret())
+            .map_err(|e| crate::error::Error::Authentication {
+                message: format!("invalid API key header value: {e}"),
+            })?;
+        key_value.set_sensitive(true);
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("X-API-KEY", key_value);
+        self.build_client_with_headers_and_redirect(
+            headers,
+            crate::redirect_guard::same_origin_policy(base_url, path_prefix),
+        )
+    }
+
+    /// Build a client with default headers and an explicit redirect policy.
     pub(crate) fn build_client_with_headers_and_redirect(
         &self,
         headers: reqwest::header::HeaderMap,
