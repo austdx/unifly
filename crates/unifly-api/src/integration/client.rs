@@ -282,17 +282,22 @@ impl IntegrationClient {
     ) -> Result<T, Error> {
         let status = resp.status();
         if status.is_success() {
-            let body = resp.text().await?;
-            serde_json::from_str(&body).map_err(|e| {
-                let preview = &body[..body.floor_char_boundary(200)];
-                Error::Deserialization {
-                    message: format!("{e} (body preview: {preview:?})"),
-                    body,
-                }
-            })
+            Self::decode_json(resp.text().await?)
         } else {
             Err(self.parse_error(status, resp).await)
         }
+    }
+
+    /// Decode a success body, keeping a UTF-8-safe 200-byte preview in the
+    /// error so a bad payload is diagnosable without logging all of it.
+    fn decode_json<T: DeserializeOwned>(body: String) -> Result<T, Error> {
+        serde_json::from_str(&body).map_err(|e| {
+            let preview = &body[..body.floor_char_boundary(200)];
+            Error::Deserialization {
+                message: format!("{e} (body preview: {preview:?})"),
+                body,
+            }
+        })
     }
 
     async fn handle_empty(&self, resp: reqwest::Response) -> Result<(), Error> {

@@ -22,6 +22,7 @@ impl IntegrationClient {
                 "raw Integration path escapes the configured API base",
             ));
         }
+        let is_delete = method == Method::DELETE;
         let mut request = self.http.request(method, url);
         if let Some(body) = body {
             request = request.json(body);
@@ -31,19 +32,19 @@ impl IntegrationClient {
         if !status.is_success() {
             return Err(self.parse_error(status, response).await);
         }
+        // DELETE succeeds on any 2xx, whatever the body: `Controller::raw_delete`
+        // discards the value (as `SessionClient::raw_delete` does), and decoding
+        // a non-JSON body would report failure after the controller deleted.
+        if is_delete {
+            return Ok(Value::Null);
+        }
         // Action endpoints answer 204 or an empty 200. That is success and
         // must not surface as a decode error, or callers retry an action the
-        // controller already performed. DELETE falls under the same rule.
+        // controller already performed.
         let text = response.text().await?;
         if text.trim().is_empty() {
             return Ok(Value::Null);
         }
-        serde_json::from_str(&text).map_err(|e| Error::Deserialization {
-            message: format!(
-                "{e} (body preview: {:?})",
-                &text[..text.floor_char_boundary(200)]
-            ),
-            body: text,
-        })
+        Self::decode_json(text)
     }
 }

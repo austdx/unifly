@@ -161,6 +161,35 @@ async fn integration_raw_accepts_empty_success_responses() {
     }
 }
 
+/// DELETE succeeds on any 2xx regardless of body: the value is discarded,
+/// and decoding a non-JSON body (e.g. `OK`) would report failure after the
+/// controller already deleted.
+#[tokio::test]
+async fn integration_raw_delete_ignores_success_body() {
+    for (label, template) in [
+        ("204", ResponseTemplate::new(204)),
+        ("empty 200", ResponseTemplate::new(200)),
+        (
+            "json 200",
+            ResponseTemplate::new(200).set_body_json(json!({"ok": true})),
+        ),
+        ("text 200", ResponseTemplate::new(200).set_body_string("OK")),
+    ] {
+        let server = MockServer::start().await;
+        let controller = controller(&server, ControllerPlatform::UnifiOs).await;
+        Mock::given(method("DELETE"))
+            .and(path("/proxy/network/integration/v1/test"))
+            .respond_with(template)
+            .expect(1)
+            .mount(&server)
+            .await;
+        controller
+            .raw_delete("integration/v1/test")
+            .await
+            .unwrap_or_else(|e| panic!("DELETE with {label} should succeed: {e}"));
+    }
+}
+
 #[tokio::test]
 async fn session_raw_keeps_cookie_csrf_and_unwrapped_response_contract() {
     let server = MockServer::start().await;
