@@ -36,6 +36,7 @@
 pub mod auth;
 pub mod error;
 pub mod integration;
+mod redirect_guard;
 pub mod session;
 pub mod site_manager;
 pub mod transport;

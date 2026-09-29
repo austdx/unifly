@@ -1,5 +1,3 @@
-use reqwest::header::{HeaderMap, HeaderValue};
-use secrecy::ExposeSecret;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -40,17 +38,9 @@ impl SiteManagerClient {
         api_key: &secrecy::SecretString,
         transport: &crate::TransportConfig,
     ) -> Result<Self, Error> {
-        let mut headers = HeaderMap::new();
-        let mut key_value = HeaderValue::from_str(api_key.expose_secret()).map_err(|error| {
-            Error::Authentication {
-                message: format!("invalid API key header value: {error}"),
-            }
-        })?;
-        key_value.set_sensitive(true);
-        headers.insert("X-API-KEY", key_value);
-
-        let http = transport.build_client_with_headers(headers)?;
         let base_url = Self::normalize_base_url(base_url)?;
+        // Same origin only: Site Manager paths vary, so no path prefix.
+        let http = transport.build_api_key_client(api_key, &base_url, None)?;
 
         Ok(Self { http, base_url })
     }

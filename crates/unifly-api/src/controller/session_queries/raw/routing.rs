@@ -24,9 +24,7 @@ fn relative_path(path: &str) -> Result<&str, CoreError> {
         || path.contains(['\\', '#'])
         || path.chars().any(char::is_control)
         || pathname.chars().any(char::is_whitespace)
-        || ["%2f", "%5c", "%25"]
-            .iter()
-            .any(|escape| encoded.contains(escape))
+        || crate::redirect_guard::has_ambiguous_escape(&encoded)
         || invalid_segment
     {
         return Err(CoreError::ValidationFailed {

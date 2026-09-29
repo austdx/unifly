@@ -5,8 +5,6 @@
 
 use std::future::Future;
 
-use reqwest::header::{HeaderMap, HeaderValue};
-use secrecy::ExposeSecret;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tracing::debug;
@@ -21,7 +19,6 @@ mod firewall;
 mod networks;
 mod policy;
 mod raw;
-mod redirect;
 mod reference;
 mod system;
 mod wifi;
@@ -65,17 +62,11 @@ impl IntegrationClient {
         transport: &crate::TransportConfig,
         platform: crate::ControllerPlatform,
     ) -> Result<Self, Error> {
-        let mut headers = HeaderMap::new();
-        let mut key_value =
-            HeaderValue::from_str(api_key.expose_secret()).map_err(|e| Error::Authentication {
-                message: format!("invalid API key header value: {e}"),
-            })?;
-        key_value.set_sensitive(true);
-        headers.insert("X-API-KEY", key_value);
-
         let base_url = Self::normalize_base_url(base_url, platform)?;
-        let http = transport
-            .build_client_with_headers_and_redirect(headers, Self::redirect_policy(&base_url))?;
+        // Pin redirects to this Integration namespace, which also pins the
+        // selected cloud console when present.
+        let http =
+            transport.build_api_key_client(api_key, &base_url, Some(base_url.path().to_owned()))?;
         let cloud_host_id = Self::extract_cloud_host_id(&base_url, platform);
 
         Ok(Self {

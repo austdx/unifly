@@ -183,6 +183,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `PORT_NUMBER_RANGE` instead of `PORT_RANGE`, which the UDM API rejects.
   `PORT_RANGE` is still accepted on read for backward compatibility.
 
+### Security
+
+- **API keys no longer follow cross-origin redirects** (austdx/unifly#4).
+  reqwest keeps custom headers such as `X-API-KEY` on a cross-host
+  redirect, so the Session client in API-key mode and the Site Manager
+  client could send the key to whatever host a redirect named. Every
+  API-key client now follows redirects only on its own origin (up to 10
+  hops, matching reqwest's default); Integration requests must also stay
+  under the Integration path. **Behavior change:** a cross-origin redirect,
+  including an `http://` to `https://` upgrade, now fails. Configure
+  profiles with the final `https://` URL.
+
 ## [0.8.0] - 2026-04-05
 
 ### Added

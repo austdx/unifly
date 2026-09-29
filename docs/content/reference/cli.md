@@ -418,6 +418,14 @@ site's UUID in site-scoped Integration paths. Absolute URLs, fragments, and
 path traversal are rejected. GET, POST, PUT, and PATCH return the complete
 JSON response; DELETE returns `{"ok": true}` on success.
 
+Every client that sends an API key (Integration, Session in API-key mode,
+and Site Manager) follows redirects only on the controller's own origin,
+up to 10 hops. Integration requests must also stay under the Integration
+path. A redirect anywhere else fails instead of sending the key there.
+That includes an `http://` to `https://` upgrade, even on the same host,
+because the scheme is part of the origin. Configure profiles with the
+final `https://` URL.
+
 ```bash
 unifly api api/s/default/stat/sitedpi                    # GET a session endpoint
 unifly api v2/api/site/default/nat                       # GET a v2 endpoint
