@@ -124,6 +124,43 @@ async fn integration_raw_uses_api_key_for_every_method_and_platform() {
     }
 }
 
+/// Action endpoints (device/port actions) answer with 204 or an empty 200.
+/// A raw call must report that as success, not as a JSON decode error,
+/// or `unifly api … -m post` exits non-zero after the controller already
+/// acted and invites a duplicate retry.
+#[tokio::test]
+async fn integration_raw_accepts_empty_success_responses() {
+    for verb in [Method::GET, Method::POST, Method::PUT, Method::PATCH] {
+        for (label, template) in [
+            ("204", ResponseTemplate::new(204)),
+            ("empty 200", ResponseTemplate::new(200)),
+            (
+                "whitespace 200",
+                ResponseTemplate::new(200).set_body_string(" \n"),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            let controller = controller(&server, ControllerPlatform::UnifiOs).await;
+            Mock::given(method(verb.as_str()))
+                .and(path("/proxy/network/integration/v1/devices/x/actions"))
+                .respond_with(template)
+                .expect(1)
+                .mount(&server)
+                .await;
+            let body = json!({"action": "RESTART"});
+            let actual = request(
+                &controller,
+                &verb,
+                "integration/v1/devices/x/actions",
+                &body,
+            )
+            .await
+            .unwrap_or_else(|e| panic!("{verb} with {label} should succeed: {e}"));
+            assert_eq!(actual, Value::Null, "{verb} with {label}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn session_raw_keeps_cookie_csrf_and_unwrapped_response_contract() {
     let server = MockServer::start().await;

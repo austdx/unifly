@@ -22,17 +22,28 @@ impl IntegrationClient {
                 "raw Integration path escapes the configured API base",
             ));
         }
-        let is_delete = method == Method::DELETE;
         let mut request = self.http.request(method, url);
         if let Some(body) = body {
             request = request.json(body);
         }
         let response = request.send().await?;
-        if is_delete {
-            self.handle_empty(response).await?;
-            Ok(Value::Null)
-        } else {
-            self.handle_response(response).await
+        let status = response.status();
+        if !status.is_success() {
+            return Err(self.parse_error(status, response).await);
         }
+        // Action endpoints answer 204 or an empty 200. That is success and
+        // must not surface as a decode error, or callers retry an action the
+        // controller already performed. DELETE falls under the same rule.
+        let text = response.text().await?;
+        if text.trim().is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_str(&text).map_err(|e| Error::Deserialization {
+            message: format!(
+                "{e} (body preview: {:?})",
+                &text[..text.floor_char_boundary(200)]
+            ),
+            body: text,
+        })
     }
 }
